@@ -1,0 +1,130 @@
+// efg, www.efg2.com/Lab, February 2001
+// This example may only work correctly under Windows 2000.
+// See details in the Cursor Overlay Lab report,
+// http://www.efg2.com/Lab/Graphics/CursorOverlay.htm
+
+unit ScreenICOtoBMP;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
+  ExtCtrls, StdCtrls;
+
+type
+  TForm1 = class(TForm)
+    ButtonICOtoBMP: TButton;
+    ImageIcon1: TImage;
+    LabelHotSpot: TLabel;
+    ImageAND: TImage;
+    ImageOR: TImage;
+    ImageIconA: TImage;
+    ImageIconB: TImage;
+    procedure ButtonICOtoBMPClick(Sender: TObject);
+  private
+    { Private declarations }
+  public
+    { Public declarations }
+  end;
+
+var
+  Form1: TForm1;
+
+implementation
+
+{$R *.DFM}
+
+// Load Icon and create "AND" bitmap mask and "OR" color bitmap.
+// Based on Tomes of Delphi 3:  Win32 Graphical API, pp. 389-391
+
+procedure TForm1.ButtonICOtoBMPClick(Sender: TObject);
+
+  VAR
+    BitmapIconA:  TBitmap;
+    BitmapIconB:  TBitmap;
+    BitmapAND  :  TBitmap;
+    BitmapOR   :  TBItmap;
+    Icon       :  TIcon;
+    IconInfo   :  TIconInfo;
+
+begin
+  Icon := TIcon.Create;
+  TRY
+    Icon.LoadFromFile('C:\Program Files\Common Files\Borland Shared\Images\Default\delphi.ico');
+    ImageIcon1.Picture.graphic := Icon;
+
+    BitmapIconA := TBitmap.Create;
+    TRY
+      BitmapIconA.Width  := Icon.Width;
+      BitmapIconA.Height := Icon.Height;
+      BitmapIconA.PixelFormat := pf24bit;
+      BitmapIconA.Canvas.Draw(0,0, Icon);
+      ImageIconA.Picture.Graphic := BitmapIconA;
+
+      // This bitmap does not show transparency correctly
+      // (i.e., this TBitmap displayed in a TImage does not
+      // appear the same way as a TIcon in a TImage.)
+      // BitmapIconB will appear just like a TIcon in a TImage.
+
+      BitmapIconA.Transparent := TRUE;
+      BitmapIconB := TBitmap.Create;
+      TRY
+        BitmapIconB.Width  := Icon.Width;
+        BitmapIconB.Height := Icon.Height;
+        BitmapIconB.PixelFormat := pf24bit;
+
+        BitmapIconB.Canvas.Brush.Color := clBtnFace;
+        BitmapIconB.Canvas.FillRect(BitmapIconB.Canvas.ClipRect);
+
+        BitmapIconB.Canvas.Draw(0,0, BitmapIconA);
+        ImageIconB.Picture.Graphic := BitmapIconB;
+      FINALLY
+        BitmapIconB.Free
+      END
+    FINALLY
+      BitmapIconA.Free
+    END;
+
+    GetIconInfo(Icon.Handle, IconInfo);
+
+    TRY
+      // "Hot Spot" for icon is center of bitmap
+      LabelHotSpot.Caption := 'Hot Spot = (' + IntToStr(IconInfo.xHotSpot) +
+                              ' , ' + IntToStr(IconInfo.yHotSpot) + ')';
+
+      BitmapAnd := TBitmap.Create;
+      TRY
+        BitmapAnd.Handle := IconInfo.hbmMask;
+
+        // "Dormant" creates a memory bitmap image in order to
+        // release the bitmap handle
+        BitmapAnd.Dormant;
+
+        ImageAND.Picture.Graphic := BitmapAnd
+      FINALLY
+        BitmapAnd.Free
+      END;
+
+       BitmapOR := TBitmap.Create;
+      TRY
+        BitmapOR.Handle := IconInfo.hbmColor;
+        BitmapOR.Dormant;
+        ImageOR.Picture.Graphic := BitmapOR
+      FINALLY
+        BitmapOR.Free
+      END;
+
+    FINALLY
+      // IF "Dormant" not used above, the bitmaps were lost with these deletes.
+      DeleteObject(IconInfo.hbmMask);
+      DeleteObject(IconInfo.hbmColor)
+    END
+
+  FINALLY
+    Icon.Free
+  END
+end;
+
+end.
+
+

@@ -1,0 +1,415 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<!-- saved from url=(0072)http://www.efg2.com/Lab/Library/Delphi/Graphics/LeadToolsConversions.TXT -->
+<HTML><HEAD>
+<META http-equiv=Content-Type content="text/html; charset=windows-1252">
+<META content="MSHTML 6.00.2600.0" name=GENERATOR></HEAD>
+<BODY><PRE>// efg, June 2000.  efg's Computer Lab, www.efg2.com/Lab
+//
+// Contents
+//
+//   - Delphi-to-Lead Tools Conversions
+//      BMP to CMP, EPS, JPG, PCT, PCX, PNG, RAS, TGA, TIF, WMF.
+//
+//   - Lead Tools-to-Delphi Conversions
+//      Method 1.  hDIB to TBitmap resulting in bmDDB using StretchDIBits
+//      Method 2.  hDIB to TBitmap resulting in bmDIB using MemoryStream (best)
+//      Method 3.  pf24bit TBitmap created using L_PaintDC Lead API call
+//
+// Should work in Delphi 3 or later.
+
+unit ScreenLeadConversions;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
+  ExtCtrls, StdCtrls;
+
+type
+  TFormLeadConversions = class(TForm)
+    ButtonBitmapToLead: TButton;
+    Image: TImage;
+    ButtonLeadtoBitmap1: TButton;
+    ButtonLeadToBitmap3: TButton;
+    ButtonLeadToBitmap2: TButton;
+    procedure ButtonBitmapToLeadClick(Sender: TObject);
+    procedure ButtonLeadtoBitmap1Click(Sender: TObject);
+    procedure ButtonLeadToBitmap3Click(Sender: TObject);
+    procedure ButtonLeadToBitmap2Click(Sender: TObject);
+  private
+    { Private declarations }
+  public
+    { Public declarations }
+  end;
+
+var
+  FormLeadConversions: TFormLeadConversions;
+
+implementation
+{$R *.DFM}
+
+  USES
+    LeadUnit;
+
+/////////////////////////////////////////////////////////////////////////////
+//  Delphi-to-Lead Tools Conversions  ///////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+
+// Create Delphi Bitmap and load BMP file from disk.
+// Convert to Lead Tools BitmapHandle and save to disk in various formats:
+// CMP, EPS, JPG, PCT, PCX, PNG, RAS, TGA, TIF, WMF.
+// Many other formats are possible.
+procedure TFormLeadConversions.ButtonBitmapToLeadClick(Sender: TObject);
+  VAR
+    BitmapHeader:  pBitmapInfo;
+    BitmapImage :  Pointer;
+    DelphiBitmap:  TBitmap;
+    HeaderSize  :  DWORD;
+    ImageSize   :  DWORD;
+    LeadBitmap  :  BitmapHandle;
+    StartTime   :  DWORD;
+begin
+  StartTime := GetTickCount;
+
+  DelphiBitmap := TBitmap.Create;
+  TRY
+    DelphiBitmap.LoadFromFile('Balloons.BMP');
+    Image.Picture.Graphic := DelphiBitmap;
+
+    L_InitBitmap(@LeadBitmap, 0, 0, 24);
+    TRY
+      GetDIBSizes(DelphiBitmap.Handle, HeaderSize, ImageSize);
+      GetMem(BitmapHeader, HeaderSize);
+      GetMem(BitmapImage,  ImageSize);
+      GetDIB(DelphiBitmap.Handle, DelphiBitmap.Palette, BitmapHeader^, BitmapImage^);
+
+      TRY
+        // Complete conversion to Lead Tool BitmapHandle
+        L_ConvertFromDIB(@LeadBitmap, TBitmapInfo(BitmapHeader^), BitmapImage);
+      FINALLY
+        FreeMem(BitmapHeader);
+        FreeMem(BitmapImage)
+      END;
+
+      // QMS = quality more important than size
+      L_SaveBitmap('Balloons.CMP', @LeadBitmap, FILE_CMP,  24,  QMS);  // Lead Proprietary
+
+      L_SaveBitmap('Balloons.EPS', @LeadBitmap, FILE_EPS,   8,  0);  // Encapsulated Postscript
+
+      // 20 here for Lead is like 80 for Delphi JPEGImage
+      L_SaveBitmap('Balloons.JPG', @LeadBitmap, FILE_JFIF, 24,  MulDiv(255,20,100));
+
+      L_SaveBitmap('Balloons.PCT', @LeadBitmap, FILE_PCT,  24,  0);  // Macintosh PCT
+      L_SaveBitmap('Balloons.PCX', @LeadBitmap, FILE_PCX,  24,  0);  // ZSoft PCX
+      L_SaveBitmap('Balloons.PNG', @LeadBitmap, FILE_PNG,  24,  0);  // Portable Network Graphics
+      L_SaveBitmap('Balloons.RAS', @LeadBitmap, FILE_RAS,  24,  0);  // Sun Raster
+      L_SaveBitmap('Balloons.TGA', @LeadBitmap, FILE_TGA,  24,  0);  // Truevision TARGA
+      L_SaveBitmap('Balloons.TIF', @LeadBitmap, FILE_TIF,  24,  0);  // TIFF
+      L_SaveBitmap('Balloons.WMF', @LeadBitmap, FILE_WMF,  24,  0);  // Windows Metafile
+
+    FINALLY
+      L_FreeBitmap(@LeadBitmap);
+    END
+
+  FINALLY
+    DelphiBitmap.Free
+  END;
+
+  ButtonBitmapToLead.Caption := IntToStr(GetTickCount-StartTime) + ' ms'
+end;
+
+
+/////////////////////////////////////////////////////////////////////////////
+//  Lead Tools-to-Delphi Conversions  ///////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+//
+// Summary:
+//
+//      Method 1.  hDIB to TBitmap resulting in bmDDB using StretchDIBits
+//      Method 2.  hDIB to TBitmap resulting in bmDIB using MemoryStream
+//      Method 3.  pf24bit TBitmap created using L_PaintDC Lead API call
+//
+// Tests:
+//
+//      A.  Deer.BMP, 160 by 194, 8 bits/pixel, palette mostly of browns
+//
+//                   256 color display     true color display (24-bit)
+//                   400 MHz Pentium       166 MHz Pentium
+//                   ------------------    -----------------
+//      Method 1     15 ms always works    12 ms white bar (~10%) 1 of 4 times
+//      Method 2      7 ms always works     4 ms always works
+//      Method 3      6 ms bad color       21 ms bad color
+//
+//
+//      B.  Balloons.BMP, 768 by 512, 24 bits/pixel, no palette
+//
+//                   256 color display     true color display (24-bit)
+//                   400 MHz Pentium       166 MHz Pentium
+//                   ------------------    -----------------
+//      Method 1      82 ms bad color      189 ms always works.
+//      Method 2      74 ms OK color       261 ms always works
+//      Method 3     155 ms bad color      289 ms always works
+//
+// ============================================================================
+
+CONST
+   SampleBMPFile = 'Balloons.BMP';   // 24-bit test image
+// SampleBMPFile = 'Deer.BMP';       // 8-bit test image (with palette)
+
+// Method 1.  hDIB to TBitmap resulting in bmDDB using StretchDIBits.
+// A hDIB (handle to a DIB) is a handle to a global memory object.  Since
+// a TBitmap does not use a true DIB (it uses a DIBSection), a handle to a
+// DIB, a hDIB, cannot be used as a hBitmap, which is a handle to a
+// DIBSECTION structure.
+//
+// Anatomy of a in-memory DIB:
+// 1.  Bitmap Info Header.  Normally 40 bytes, i.e., SizeOf(TBitmapInfoHeader)
+// 2.  Color Table.  Bitmaps with &gt; 256 colors do not have a color table.
+// 3.  Bitmap Bits.
+//
+// Based on my routine from 6 September 1997 that was off by 2 bytes and abandoned
+// for over two years, and UseNet Posts by Damon Chandler using Builder Code.
+//
+FUNCTION hDIBToTBitmap1(CONST hDIB:  THandle):  TBitmap;
+  CONST
+    PaletteVersion = $0300;  // "magic number" for Window's LOGPALETTE
+  VAR
+    BitCount      :  INTEGER;
+    BitmapInfo    :  pBitmapInfo;
+    BitmapBits    :  Pointer;
+    i             :  INTEGER;
+    LogicalPalette:  TMaxLogPalette;
+    NumberOfColors:  INTEGER;
+    RGBQuad       :  pRGBQuad;
+BEGIN
+  RESULT := TBitmap.Create;
+
+  BitmapInfo := GlobalLock(hDIB);
+  TRY
+    RESULT.Width  := BitmapInfo.bmiHeader.biWidth;
+    RESULT.Height := BitmapInfo.bmiHeader.biHeight;
+
+    NumberOfColors := BitmapInfo.bmiHeader.biClrUsed;
+    BitCount       := BitmapInfo.bmiHeader.biBitCount;
+    IF   (NumberOfColors = 0) AND (BitCount &lt;= 8)
+    THEN BEGIN
+      NumberOfColors := 1 SHL BitCount;
+
+      // First RGBQuad in Color Table
+      RGBQuad := Pointer(DWORD(BitmapInfo) +  SizeOf(TBitmapInfoHeader));
+
+      // Create palette
+      LogicalPalette.palVersion := PaletteVersion;
+      LogicalPalette.palNumEntries := NumberOfColors;
+
+      FOR i := 0 TO NumberOfColors-1 DO
+      BEGIN
+        WITH LogicalPalette.palPalEntry[i]
+        DO BEGIN
+          peRed   := RGBQuad.rgbRed;
+          peGreen := RGBQuad.rgbGreen;
+          peBlue  := RGBQuad.rgbBlue;
+          peFlags := 0   // default value
+        END;
+
+        INC(RGBQuad)  // next entry in Color Table
+      END;
+
+      RESULT.Palette := CreatePalette(pLogPalette(@LogicalPalette)^)
+    END;
+
+    BitmapBits := Pointer(DWORD(BitmapInfo) +
+                  SizeOf(TBitmapInfoHeader) +
+                  NumberOfColors*SizeOf(TRGBQuad));
+
+    StretchDIBits(RESULT.Canvas.Handle,
+                  0,0, RESULT.Width, RESULT.Height,
+                  0,0, RESULT.Width, RESULT.Height,
+                  BitmapBits, BitmapInfo^,
+                  DIB_RGB_COLORS, SRCCOPY);
+
+    // At this point the RESULT TBitmap is a device-dependent bitmap (DDB) and
+    // depends on the current display mode (just like in Delphi 2 TBitmaps).
+    ASSERT( RESULT.HandleType = bmDDB );
+
+  FINALLY
+    GlobalUnlock(hDIB);
+    GlobalFree(hDIB)
+  END
+END {hDIBToTBitmap1};
+
+
+// The Lead Tools L_ConvertToDIB returns a hDIB, which must be converted
+// to a TBitmap.  Unfortunately, the approach shown here creates a TBitmap
+// that is a DDB (just like in D2) instead of a DIB.
+procedure TFormLeadConversions.ButtonLeadtoBitmap1Click(Sender: TObject);
+  VAR
+    DelphiBitmap:  TBitmap;
+    hDIB        :  THandle;
+    LeadBitmap  :  BitmapHandle;
+    StartTime   :  DWORD;
+begin
+  StartTime := GetTickCount;
+
+  L_LoadBitmap(SampleBMPFile, @LeadBitmap, 0, ORDER_BGR);
+  TRY
+    hDIB := L_ConvertToDIB(@LeadBitmap);
+    DelphiBitmap := hDIBToTBitmap1(hDIB);
+
+    TRY
+      // At this point the result is a DDB, not a DIB
+      ASSERT( DelphiBitmap.HandleType = bmDDB);
+
+      // Display conversion result
+      Image.Picture.Graphic := DelphiBitmap
+    FINALLY
+      DelphiBitmap.Free
+    END
+  FINALLY
+    L_FreeBitmap(@LeadBitmap);
+  END;
+
+  ButtonLeadToBitmap1.Caption := IntToStr(GetTickCount-StartTime) + ' ms'
+end;
+
+
+// ============================================================================
+
+// Method 2.  hDIB to TBitmap resulting in bmDIB using MemoryStream.
+// Anatomy of a DIB written to stream :
+// 1.  Bitmap File Header.  Normally 14 bytes, i.e., SizeOf(TBitmapFileHeader).
+// 2.  Bitmap Info Header.  Normally 40 bytes, i.e., SizeOf(TBitmapInfoHeader)
+// 3.  Color Table.  Bitmaps with &gt; 256 colors do not have a color table.
+// 4.  Bitmap Bits.
+//
+// Based on 12 July 1998 UseNet post "DIB to TBitmap" by Taine Gilliam in
+// borland.public.delphi.vcl.components.using
+FUNCTION hDIBToTBitmap2(CONST hDIB:  THandle):  TBitmap;
+
+  VAR
+    BitCount        :  INTEGER;
+    BitmapFileHeader:  TBitmapFileHeader;
+    BitmapInfo      :  pBitmapInfo;
+    DIBinMemory     :  Pointer;
+    MemoryStream    :  TMemoryStream;
+    NumberOfColors  :  INTEGER;
+BEGIN
+  RESULT := TBitmap.Create;
+
+  DIBinMemory := GlobalLock(hDIB);
+  TRY
+    BitmapInfo := DIBInMemory;
+    NumberOfColors := BitmapInfo.bmiHeader.biClrUsed;
+    BitCount       := BitmapInfo.bmiHeader.biBitCount;
+    IF   (NumberOfColors = 0) AND (BitCount &lt;= 8)
+    THEN NumberOfColors := 1 SHL BitCount;
+
+    WITH BitmapFileHeader DO
+    BEGIN
+      bfType := $4D42;  // 'BM'
+      bfReserved1 := 0;
+      bfReserved2 := 0;
+      bfOffBits := SizeOf(TBitmapFileHeader)       +
+                   SizeOf(TBitmapInfoHeader)       +
+                   NumberOfColors*SizeOf(TRGBQuad);
+      bfSize := bfOffBits + BitmapInfo.bmiHeader.biSizeImage;
+    END;
+
+    MemoryStream := TMemoryStream.Create;
+    TRY
+      MemoryStream.Write(BitmapFileHeader, SizeOf(TBitmapFileHeader));
+      MemoryStream.Write(DIBInMemory^,
+                         BitmapFileHeader.bfSize - SizeOf(TBitmapFileHeader));
+      MemoryStream.Position := 0;
+      RESULT.LoadFromStream(MemoryStream)
+    FINALLY
+      MemoryStream.Free
+    END
+
+  FINALLY
+    GlobalUnlock(hDIB);
+    GlobalFree(hDIB)
+  END
+END {hDIBToTBitmap2};
+
+
+procedure TFormLeadConversions.ButtonLeadToBitmap2Click(Sender: TObject);
+VAR
+    DelphiBitmap:  TBitmap;
+    hDIB        :  THandle;
+    LeadBitmap  :  BitmapHandle;
+    StartTime   :  DWORD;
+begin
+  StartTime := GetTickCount;
+
+  L_LoadBitmap(SampleBMPFile, @LeadBitmap, 0, ORDER_BGR);
+  TRY
+    hDIB := L_ConvertToDIB(@LeadBitmap);
+
+    DelphiBitmap := hDIBToTBitmap2(hDIB);
+    TRY
+      ASSERT( DelphiBitmap.HandleType = bmDIB);
+
+      // Display conversion result
+      Image.Picture.Graphic := DelphiBitmap
+    FINALLY
+      DelphiBitmap.Free
+    END
+  FINALLY
+    L_FreeBitmap(@LeadBitmap);
+  END;
+
+  ButtonLeadToBitmap2.Caption := IntToStr(GetTickCount-StartTime) + ' ms'
+end;
+
+
+// ============================================================================
+
+// Method 3.  pf24bit TBitmap created using L_PaintDC Lead API call.
+// Based on suggestion by Guido Amrein (from Switzerland) on 11 May 1999
+// to the borland.public.cppbuilder.graphics newsgroup:  "The easiest way
+// to draw the DIB directly in the Canvas of the TBitmap is if your
+// third-part tool offers such a function," like L_PaintDC
+procedure TFormLeadConversions.ButtonLeadToBitmap3Click(Sender: TObject);
+VAR
+    DelphiBitmap   :  TBitmap;
+    LeadBitmap     :  BitmapHandle;
+    SourceRectangle:  TRect;
+    StartTime      :  DWORD;
+    TargetRectangle:  TRect;
+begin
+  StartTime := GetTickCount;
+
+  L_LoadBitmap(SampleBMPFile, @LeadBitmap, 0, ORDER_BGR);
+  TRY
+    DelphiBitmap := TBitmap.Create;
+    TRY
+      DelphiBitmap.Width  := LeadBitmap.Width;
+      DelphiBitmap.Height := LeadBitmap.Height;
+      DelphiBitmap.PixelFormat := pf24bit;  // don't bother with palettes
+
+      SourceRectangle := Rect(0,0, LeadBitmap.Width, LeadBitmap.Height);
+      TargetRectangle := DelphiBitmap.Canvas.ClipRect;
+
+      L_PaintDC(DelphiBitmap.Canvas.Handle,
+                @LeadBitmap,
+                NIL, NIL,  // default RECTs
+                @SourceRectangle,
+                @TargetRectangle,
+                SRCCOPY);
+
+      // Display conversion result
+      Image.Picture.Graphic := DelphiBitmap
+    FINALLY
+      DelphiBitmap.Free
+    END
+  FINALLY
+    L_FreeBitmap(@LeadBitmap);
+  END;
+
+  ButtonLeadToBitmap3.Caption := IntToStr(GetTickCount-StartTime) + ' ms'
+end;
+
+
+end.
+</PRE></BODY></HTML>

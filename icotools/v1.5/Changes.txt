@@ -1,0 +1,24 @@
+IconTools Changes
+
+************************************************************
+Version 1.5
+
+New Class:
+	TIconLibrary now with 16 bit read and write support
+
+************************************************************
+Version 1.1
+Added:
+
+TFileIcon / TResourecIcon
+procedure SaveIconToFile(Filename : String;Index : Word);
+procedure SaveIconToStream(Stream : TStream;Index : Word);
+procedure SaveToFile(Filename : String);
+procedure SaveToStream(Stream : TStream);
+
+TFileIcon
+constructor CreateInMem(Filename : String);
+
+Renamed:
+property IconHeader renamed to IconResInfo
+TIconHeader record renamed to TIconResInfo
